@@ -1,149 +1,92 @@
-function consoleLog(level, args) {
-  const maxPriorityInt = this.LEVEL[this.logLevel].priority;
-  const incomingPriorityInt = this.LEVEL[level].priority;
-  if (incomingPriorityInt > maxPriorityInt) return;
-  if (this.LEVEL[level].color === null) return; // safeguard
-
-  const prefix = genPrefix.call(this, level);
-  console.log.apply(null, [].concat(prefix, args))
-}
-
-function genPrefix(level) {
-  const levelMeta = this.LEVEL[level];
-
-  if (this.isBrowser && !this.isIE) { // FF or Chrome
-    return [`[ %c${level}%c ]`, `color: ${levelMeta.color.browser}`, 'color: black'];
-  } else if (!this.isBrowser && !this.isIE) { // console
-    return [`[ ${levelMeta.color.console}${level}\x1b[0m ]`]
-  } else { // IE or anything else
-    return [`[ ${level} ]`];
-  }
-}
+import cookie from 'react-cookies';
 
 class Logger {
-  static getCookie(sName) {
-    const oCrumbles = document.cookie.split(';');
-    for(let i=0; i<oCrumbles.length; i++) {
-      const oPair = oCrumbles[i].split('=');
-      const sKey = decodeURIComponent(oPair[0].trim());
-      const sValue = oPair.length >1 ? oPair[1] : '';
-      if(sKey == sName) {
-        return decodeURIComponent(sValue);
-      }
-    }
-    return '';
+  static genPrefix(logType, logColor, isIE) {
+    return isIE
+      ? [`[ ${logType} ]`]
+      : [`[ %c${logType}%c ]`, `color: ${logColor}`, 'color: black'];
   }
 
   constructor() {
-    this.override = false;
-    this.isBrowser = typeof window !== 'undefined';
-    this.isIE = this.isBrowser && window.navigator && window.navigator.languages === undefined;
-    this.LEVEL = {
-      NONE: {
-        color: null, /* unused solarized color : #859900 */
-        priority: 0
-      },
-      INFO: {
-        color: {
-          browser: '#268bd2',
-          console: '\x1b[32m', // FgGreen
-        },
-        priority: 1
-      },
-      WARN: {
-        color: {
-          browser: '#b58900',
-          console: '\x1b[33m', // FgYellow
-        },
-        priority: 2
-      },
-      ERROR: {
-        color: {
-          browser: '#dc322f',
-          console: '\x1b[31m', // FgRed
-        },
-        priority: 3
-      },
-      FATAL: {
-        color: {
-          browser: '#d33682',
-          console: '\x1b[41m', // BgRed
-        },
-        priority: 4
-      },
-      DEBUG: {
-        color: {
-          browser: '#6c71c4',
-          console: '\x1b[35m', // FgMagenta
-        },
-        priority: 5
-      },
-      TRACE: {
-        color: {
-          browser: '#2aa198',
-          console: '\x1b[45m', // BgMagenta
-        },
-        priority: 6
-      },
-      ALL: {
-        color: null,
-        priority: 7
-      }
+    // Colors are "Solarized" theme.
+    this.isIE = window.navigator.languages === undefined;
+    this.solarizedColors = {
+      base03: '#002b36',
+      base02: '#073642',
+      base01: '#586e75',
+      base00: '#657b83',
+      base0: '#839496',
+      base1: '#93a1a1',
+      base2: '#eee8d5',
+      base3: '#fdf6e3',
+      yellow: '#b58900',
+      orange: '#cb4b16',
+      red: '#dc322f',
+      magenta: '#d33682',
+      violet: '#6c71c4',
+      blue: '#268bd2',
+      cyan: '#2aa198',
+      green: '#859900',
     };
 
-    if (arguments.length && arguments[0]) {
-      if (typeof arguments[0] === 'boolean') {
-        this.override = arguments[0];
-      } else if (typeof arguments[0] === 'object' && arguments[0].override) {
-        this.override = arguments[0].override;
-      }
-    }
+    this.colors = {
+      Info: this.solarizedColors.blue,
+      Warn: this.solarizedColors.yellow,
+      Error: this.solarizedColors.red,
+      Debug: this.solarizedColors.violet,
+    };
 
-    // we keep window.loglevel in sync, but this.logLevel is the source of truth.
-    if (this.isBrowser) {
+    this.LEVEL = {
+      NONE: 'None',
+      INFO: 'Info',
+      WARN: 'Warn',
+      ERROR: 'Error',
+      DEBUG: 'Debug',
+    };
+
+    this.priority = {
+      NONE: 0,
+      INFO: 1,
+      WARN: 2,
+      ERROR: 3,
+      DEBUG: 4,
+    };
+
+    const allCookies = cookie.loadAll();
+    if (window) {
       window.logLevel = window.logLevel
-        || (this.constructor.getCookie['loglevel'] && this.constructor.getCookie['loglevel'].toUpperCase())
-        || 'NONE';
-      
-      // set logLevel on window if on localhost
-      if (window.logLevel === 'NONE' && location.hostname === 'localhost') window.logLevel = 'DEBUG';
+        || allCookies.loglevel
+        || (window.localStorage && window.localStorage.getItem && window.localStorage.getItem('loglevel'))
+        || window.location.hostname === 'localhost' ? this.LEVEL.DEBUG : this.LEVEL.NONE;
     }
+    this.logLevel = (window && window.logLevel && this.LEVEL[window.logLevel.toUpperCase()]) || this.LEVEL.NONE;
 
-    this.logLevel = (this.isBrowser && window.logLevel && this.constructor.LEVEL[window.logLevel]) ? window.logLevel : 'NONE';
-    consoleLog.call(this, 'INFO', [`
-              Jlogger
+    this.consoleLog(this.LEVEL.INFO, [`
       Logging Level ${this.logLevel}
     `]);
-    
   }
 
-  level(lvl) {
-    let newLevel = lvl;
-    if (typeof lvl === 'number') {
-      Object.keys(this.LEVEL).forEach(item => {
-        if (lvl === this.LEVEL[item].priority) newLevel = item;
-      });
+  consoleLog(level, args) {
+    const maxPriority = this.priority[this.logLevel.toUpperCase()];
+    const incomingPriority = this.priority[level.toUpperCase()];
+    if (incomingPriority > maxPriority) return;
 
-      if (lvl > Object.keys(this.LEVEL).length - 1) newLevel = 'ALL';
-    } else {
-      newLevel = newLevel.toUpperCase();
-    }
-
-    if (typeof window !== 'undefined') window.logLevel = this.LEVEL[newLevel] || this.LEVEL.NONE;
-    this.logLevel = newLevel || 'NONE';
-
-    if (!this.LEVEL[newLevel]) this.error(`Logger Error: No level '${newLevel}' exists`);
+    const prefix = this.constructor.genPrefix(level, this.colors[level] || 'black', this.isIE);
+    console.log(...prefix, ...args); // eslint-disable-line no-console
   }
 
-  info(...args) { consoleLog.call(this, 'INFO', args); }
-  warn(...args) { consoleLog.call(this, 'WARN', args); }
-  error(...args) { consoleLog.call(this, 'ERROR', args); }
-  fatal(...args) { consoleLog.call(this, 'FATAL', args); }
-  debug(...args) { consoleLog.call(this, 'DEBUG', args); }
-  trace(...args) { consoleLog.call(this, 'TRACE', args); }
-  all(...args) { consoleLog.call(this, 'ALL', args); }
+  updateLogLevel(level) {
+    if (window) window.logLevel = this.LEVEL[level] || this.LEVEL.NONE;
+    this.logLevel = this.LEVEL[level] || this.LEVEL.NONE;
+  }
+
+  info(...args) { this.consoleLog(this.LEVEL.INFO, args); }
+  warn(...args) { this.consoleLog(this.LEVEL.WARN, args); }
+  error(...args) { this.consoleLog(this.LEVEL.ERROR, args); }
+  // fatal(...args) { this.consoleLog(this.LEVEL.FATAL, args); }
+  debug(...args) { this.consoleLog(this.LEVEL.DEBUG, args); }
+  // trace(...args) { this.consoleLog(this.LEVEL.TRACE, args); }
+  // all(...args) { this.consoleLog(this.LEVEL.ALL, args); }
 }
 
-module.exports = Object.assign(function() {
-  return new Logger(...arguments);
-}, new Logger());
+export default new Logger();
